@@ -9,6 +9,11 @@ import os
 private func csops(_ pid: Int32, _ ops: Int32,
                    _ useraddr: UnsafeMutableRawPointer?, _ usersize: Int) -> Int32
 
+@_silgen_name("husk_heap13_prepare_cage")
+private func prepareFlutterCage()
+@_silgen_name("husk_heap13_release_cage")
+private func releaseUnusedFlutterCage()
+
 private let CS_OPS_STATUS = Int32(0)
 private let CS_DEBUGGED = UInt32(0x10000000)
 
@@ -95,7 +100,9 @@ enum JITBootstrap {
         }
         HuskLog.log("jit", "claiming \(jitBytes / (1024 * 1024)) MiB of JIT memory now, "
                          + "before the guest download -- StikDebug does not stay attached")
+        prepareFlutterCage()
         let ok = husk_ios_jit_prewarm(jitBytes)
+        if !ok { releaseUnusedFlutterCage() }
         if ok {
             prewarmed = true
             lastFailure = nil

@@ -8,6 +8,8 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
     assert info["HuskBuildCommit"].startswith(commit)
     assert b"[HEAP13] segmented anchor kr=" in z.read(prefix + "Husk")
+    assert b"[HEAP13] early cage kr=" in z.read(prefix + "Husk")
+    assert b"[HEAP13] consuming early cage address=" in z.read(prefix + "Husk")
     has_patch = b"aligned cage vm_map kr=" in z.read(prefix + "Husk")
     assert has_patch == (info.get("HuskTestVariant") != "vphone-baseline"), "Wrong compiled variant"
     manifest = json.loads(Path("build/runtime-manifest.json").read_text())

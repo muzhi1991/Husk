@@ -1064,6 +1064,31 @@ static void mm_trace(const char *what, void *a, size_t l, long x, long y)
 static struct { uintptr_t base; size_t len, real; } g_phantom[4];
 static int g_nphantom;
 
+/* Device candidate: reserve before JIT's writable alias occupies the first
+ * aligned slot. Own the entire cage before exposing it to the guest. This
+ * reserves address space only; no pages are committed until the guest asks. */
+static vm_address_t g_early_cage;
+static bool g_early_cage_tried;
+void husk_heap13_prepare_cage(void)
+{
+    if (g_early_cage_tried) return;
+    g_early_cage_tried = true;
+    vm_address_t address = 0;
+    kern_return_t kr = vm_map(mach_task_self(), &address, PHANTOM_HALF,
+        PHANTOM_HALF - 1, VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE,
+        VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_COPY);
+    if (kr == KERN_SUCCESS) g_early_cage = address;
+    tl_log_line("[HEAP13] early cage kr=%d address=%p", kr, (void *)address);
+}
+void husk_heap13_release_cage(void)
+{
+    if (!g_early_cage) return;
+    kern_return_t kr = vm_deallocate(mach_task_self(), g_early_cage, PHANTOM_HALF);
+    tl_log_line("[HEAP13] unused early cage release kr=%d", kr);
+    if (kr == KERN_SUCCESS) g_early_cage = 0;
+}
+
+
 /* Candidate diagnostic: report only large regions/gaps, never their contents. */
 static void heap13_layout(void)
 {
@@ -1103,8 +1128,10 @@ static void *phantom_reserve(size_t len)
     /* Ask the kernel for alignment without an oversized temporary reservation.
      * ANYWHERE does not replace an existing mapping. Keep the old fallback if
      * the task's address-space policy refuses this request too. */
-    vm_address_t aligned = 0;
-    kern_return_t kr = vm_map(mach_task_self(), &aligned, PHANTOM_HALF,
+    vm_address_t aligned = g_early_cage;
+    g_early_cage = 0; /* ownership passes to g_phantom below, exactly once */
+    if (aligned) tl_log_line("[HEAP13] consuming early cage address=%p", (void *)aligned);
+    kern_return_t kr = aligned ? KERN_SUCCESS : vm_map(mach_task_self(), &aligned, PHANTOM_HALF,
                              PHANTOM_HALF - 1, VM_FLAGS_ANYWHERE,
                              MACH_PORT_NULL, 0, FALSE, VM_PROT_NONE,
                              VM_PROT_ALL, VM_INHERIT_COPY);
