@@ -1067,7 +1067,7 @@ static int g_nphantom;
 /* Candidate diagnostic: report only large regions/gaps, never their contents. */
 static void heap13_layout(void)
 {
-    vm_address_t cursor = 0, previous = 0;
+    vm_address_t cursor = (vm_address_t)0x7000000000ULL, previous = cursor;
     unsigned count = 0;
     for (; count < 4096; count++) {
         vm_address_t address = cursor;
@@ -1078,7 +1078,7 @@ static void heap13_layout(void)
         kern_return_t kr = vm_region_64(mach_task_self(), &address, &size,
             VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &n, &object);
         if (object != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object);
-        if (kr != KERN_SUCCESS || !size || address + size <= address) {
+        if (kr != KERN_SUCCESS || !size || address + size <= cursor) {
             tl_log_line("[HEAP13] regions end kr=%d count=%u cursor=%p", kr, count, (void *)cursor);
             break;
         }
@@ -1124,18 +1124,45 @@ static void *phantom_reserve(size_t len)
             if (kr == KERN_SUCCESS) { res = (void *)aligned; break; }
         }
         if (res == MAP_FAILED) {
-            /* Diagnostic-only 1 GiB probes distinguish alignment from size.
-             * Release every success immediately; never expose it to Dart. */
-            const int probe_tags[] = { 0, VM_MEMORY_MALLOC };
-            for (unsigned i = 0; i < 2; i++) {
-                aligned = 0;
-                kr = vm_map(mach_task_self(), &aligned, (size_t)1 << 30,
-                    PHANTOM_HALF - 1, VM_FLAGS_ANYWHERE | VM_MAKE_TAG(probe_tags[i]),
-                    MACH_PORT_NULL, 0, FALSE, VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_COPY);
-                tl_log_line("[HEAP13] aligned 1G probe tag=%d kr=%d address=%p", probe_tags[i], kr, (void *)aligned);
-                if (kr == KERN_SUCCESS) {
-                    kern_return_t freed = vm_deallocate(mach_task_self(), aligned, (size_t)1 << 30);
-                    tl_log_line("[HEAP13] probe release kr=%d", freed);
+            /* Try a complete cage in smaller entries. FIXED without OVERWRITE
+             * refuses collisions; never replace memory belonging to the app.
+             * A partial reservation is rolled back, not exposed to the guest. */
+            const vm_size_t chunk = (vm_size_t)1 << 30;
+            aligned = 0;
+            kr = vm_map(mach_task_self(), &aligned, chunk, PHANTOM_HALF - 1,
+                VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE,
+                VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_COPY);
+            tl_log_line("[HEAP13] segmented anchor kr=%d address=%p", kr, (void *)aligned);
+            if (kr == KERN_SUCCESS) {
+                unsigned owned = 1;
+                for (; owned < 4; owned++) {
+                    vm_address_t next = aligned + owned * chunk;
+                    kr = vm_map(mach_task_self(), &next, chunk, 0,
+                        VM_FLAGS_FIXED, MACH_PORT_NULL, 0, FALSE,
+                        VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_COPY);
+                    tl_log_line("[HEAP13] segmented part=%u kr=%d address=%p", owned, kr, (void *)next);
+                    if (kr != KERN_SUCCESS) break;
+                }
+                if (owned == 4) res = (void *)aligned;
+                else {
+                    kr = vm_deallocate(mach_task_self(), aligned, owned * chunk);
+                    tl_log_line("[HEAP13] segmented rollback bytes=%#zx kr=%d", (size_t)owned * chunk, kr);
+                }
+            }
+            if (res == MAP_FAILED) {
+                /* Size-boundary probes are diagnostic only, released at once. */
+                const vm_size_t sizes[] = { PHANTOM_HALF - (size_t)getpagesize(),
+                    (vm_size_t)3 << 30, (vm_size_t)2 << 30 };
+                for (unsigned i = 0; i < 3; i++) {
+                    aligned = 0;
+                    kr = vm_map(mach_task_self(), &aligned, sizes[i], PHANTOM_HALF - 1,
+                        VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE,
+                        VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_COPY);
+                    tl_log_line("[HEAP13] boundary probe bytes=%#zx kr=%d address=%p", (size_t)sizes[i], kr, (void *)aligned);
+                    if (kr == KERN_SUCCESS) {
+                        kr = vm_deallocate(mach_task_self(), aligned, sizes[i]);
+                        tl_log_line("[HEAP13] probe release kr=%d", kr);
+                    }
                 }
             }
         }

@@ -19,3 +19,7 @@ No end-to-end Flutter success is claimed. The forced reservation comparison cann
 ## Device diagnostic follow-up
 
 The first vm_map candidate failed on iPhone 13 with KERN_NO_SPACE. This follow-up logs large virtual regions and holes, then attempts the same aligned 4 GiB reservation with MALLOC tags to distinguish allocation-range selection from capacity. All requests remain ANYWHERE and PROT_NONE. If they fail, temporary aligned 1 GiB probes are released immediately and never returned to Dart. Host tests are not evidence of iOS success. Only the device variant is built for this round.
+
+## Segmented reservation candidate
+
+If aligned whole-cage allocations fail, reserve four adjacent 1 GiB entries. Only the first entry uses ANYWHERE with 4 GiB alignment; following entries use FIXED without OVERWRITE, so collisions fail. Roll back partial reservations and return a cage only when all 4 GiB are owned. Diagnostic-only size probes are immediately released. Host interposition verifies both complete-cage commit at both ends and partial rollback; this does not establish iOS compatibility.
