@@ -1064,6 +1064,33 @@ static void mm_trace(const char *what, void *a, size_t l, long x, long y)
 static struct { uintptr_t base; size_t len, real; } g_phantom[4];
 static int g_nphantom;
 
+/* Candidate diagnostic: report only large regions/gaps, never their contents. */
+static void heap13_layout(void)
+{
+    vm_address_t cursor = 0, previous = 0;
+    unsigned count = 0;
+    for (; count < 4096; count++) {
+        vm_address_t address = cursor;
+        vm_size_t size = 0;
+        vm_region_basic_info_data_64_t info;
+        mach_msg_type_number_t n = VM_REGION_BASIC_INFO_COUNT_64;
+        mach_port_t object = MACH_PORT_NULL;
+        kern_return_t kr = vm_region_64(mach_task_self(), &address, &size,
+            VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &n, &object);
+        if (object != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object);
+        if (kr != KERN_SUCCESS || !size || address + size <= address) {
+            tl_log_line("[HEAP13] regions end kr=%d count=%u cursor=%p", kr, count, (void *)cursor);
+            break;
+        }
+        if (address > previous && address - previous >= ((size_t)256 << 20))
+            tl_log_line("[HEAP13] gap %p..%p", (void *)previous, (void *)address);
+        if (size >= ((size_t)512 << 20))
+            tl_log_line("[HEAP13] region %p..%p prot=%d max=%d", (void *)address,
+                (void *)(address + size), info.protection, info.max_protection);
+        previous = cursor = address + size;
+    }
+}
+
 static void *phantom_reserve(size_t len)
 {
 #ifdef HUSK_HEAP_BASELINE
@@ -1083,6 +1110,36 @@ static void *phantom_reserve(size_t len)
                              VM_PROT_ALL, VM_INHERIT_COPY);
     tl_log_line("mm: aligned cage vm_map kr=%d address=%p", kr, (void *)aligned);
     if (kr == KERN_SUCCESS) res = (void *)aligned;
+    if (res == MAP_FAILED) {
+        heap13_layout();
+        /* XNU may place tagged heap allocations in a separate user range.
+         * Every attempt is ANYWHERE: no existing mapping can be replaced. */
+        const int tags[] = { VM_MEMORY_MALLOC, VM_MEMORY_MALLOC_LARGE };
+        for (unsigned i = 0; i < sizeof(tags) / sizeof(tags[0]); i++) {
+            aligned = 0;
+            kr = vm_map(mach_task_self(), &aligned, PHANTOM_HALF,
+                PHANTOM_HALF - 1, VM_FLAGS_ANYWHERE | VM_MAKE_TAG(tags[i]),
+                MACH_PORT_NULL, 0, FALSE, VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_COPY);
+            tl_log_line("[HEAP13] aligned 4G tag=%d kr=%d address=%p", tags[i], kr, (void *)aligned);
+            if (kr == KERN_SUCCESS) { res = (void *)aligned; break; }
+        }
+        if (res == MAP_FAILED) {
+            /* Diagnostic-only 1 GiB probes distinguish alignment from size.
+             * Release every success immediately; never expose it to Dart. */
+            const int probe_tags[] = { 0, VM_MEMORY_MALLOC };
+            for (unsigned i = 0; i < 2; i++) {
+                aligned = 0;
+                kr = vm_map(mach_task_self(), &aligned, (size_t)1 << 30,
+                    PHANTOM_HALF - 1, VM_FLAGS_ANYWHERE | VM_MAKE_TAG(probe_tags[i]),
+                    MACH_PORT_NULL, 0, FALSE, VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_COPY);
+                tl_log_line("[HEAP13] aligned 1G probe tag=%d kr=%d address=%p", probe_tags[i], kr, (void *)aligned);
+                if (kr == KERN_SUCCESS) {
+                    kern_return_t freed = vm_deallocate(mach_task_self(), aligned, (size_t)1 << 30);
+                    tl_log_line("[HEAP13] probe release kr=%d", freed);
+                }
+            }
+        }
+    }
 #endif
     /* Reserve 5 GiB, which holds an aligned 4 GiB only when it starts in the first GiB of an alignment period. Mappings come one after
      * another, so a miss is kept (it moves the next one on by a GiB) and given back once there is a hit. */

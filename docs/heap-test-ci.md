@@ -15,3 +15,7 @@ CI also emits separately labelled vphone and vphone-baseline builds. Only those 
 GitHub Actions run 40272635684 built and verified all three variants successfully. The research VM accepted installation and the test app's guarded MAP_JIT probe returned failure: the kernel granted an executable mapping, but the generated-code probe faulted. The upstream JIT policy blocks the standard build before APK execution, and the VM-only probe does not resolve that underlying execution restriction. See the open upstream vphone issue https://github.com/Lakr233/vphone-cli/issues/603 for related research-guest JIT limitations (different tested system version).
 
 No end-to-end Flutter success is claimed. The forced reservation comparison cannot reach the heap initialization until JIT works. The device IPA is an experimental heap candidate, not a verified fix. Do not use a vphone artifact as the physical-device candidate.
+
+## Device diagnostic follow-up
+
+The first vm_map candidate failed on iPhone 13 with KERN_NO_SPACE. This follow-up logs large virtual regions and holes, then attempts the same aligned 4 GiB reservation with MALLOC tags to distinguish allocation-range selection from capacity. All requests remain ANYWHERE and PROT_NONE. If they fail, temporary aligned 1 GiB probes are released immediately and never returned to Dart. Host tests are not evidence of iOS success. Only the device variant is built for this round.

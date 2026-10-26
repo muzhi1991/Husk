@@ -7,6 +7,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     assert info["HuskExperimentalFix"] == "dart-aligned-cage-vm-map-v1"
     commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
     assert info["HuskBuildCommit"].startswith(commit)
+    assert b"[HEAP13] aligned 4G tag=" in z.read(prefix + "Husk")
     has_patch = b"aligned cage vm_map kr=" in z.read(prefix + "Husk")
     assert has_patch == (info.get("HuskTestVariant") != "vphone-baseline"), "Wrong compiled variant"
     manifest = json.loads(Path("build/runtime-manifest.json").read_text())
