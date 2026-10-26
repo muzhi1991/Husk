@@ -1066,8 +1066,18 @@ static int g_nphantom;
 
 static void *phantom_reserve(size_t len)
 {
-    if (len != 2 * PHANTOM_HALF || g_nphantom >= 4) return MAP_FAILED;
+    if ((len != 2 * PHANTOM_HALF && len != 2 * PHANTOM_HALF - (size_t)getpagesize()) || g_nphantom >= 4) return MAP_FAILED;
     void *res = MAP_FAILED;
+    /* Ask the kernel for alignment without an oversized temporary reservation.
+     * ANYWHERE does not replace an existing mapping. Keep the old fallback if
+     * the task's address-space policy refuses this request too. */
+    vm_address_t aligned = 0;
+    kern_return_t kr = vm_map(mach_task_self(), &aligned, PHANTOM_HALF,
+                             PHANTOM_HALF - 1, VM_FLAGS_ANYWHERE,
+                             MACH_PORT_NULL, 0, FALSE, VM_PROT_NONE,
+                             VM_PROT_ALL, VM_INHERIT_COPY);
+    tl_log_line("mm: aligned cage vm_map kr=%d address=%p", kr, (void *)aligned);
+    if (kr == KERN_SUCCESS) res = (void *)aligned;
     /* Reserve 5 GiB, which holds an aligned 4 GiB only when it starts in the first GiB of an alignment period. Mappings come one after
      * another, so a miss is kept (it moves the next one on by a GiB) and given back once there is a hit. */
     void *held[8]; int nheld = 0;

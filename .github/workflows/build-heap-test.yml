@@ -1,0 +1,56 @@
+name: Build Husk heap test
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/dart-aligned-cage]
+permissions:
+  contents: read
+concurrency:
+  group: husk-heap-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          brew install xcodegen
+          python3 -m venv /tmp/husk-ci-python
+          /tmp/husk-ci-python/bin/pip install PyYAML
+          rustup target add aarch64-apple-ios
+      - name: Stage pinned official dependencies
+        run: |
+          mkdir -p build
+          curl --fail --location --retry 3 https://github.com/Leviidev/Husk/releases/download/3.0/Husk.ipa -o build/official-3.0.ipa
+          /tmp/husk-ci-python/bin/python scripts/ci_stage_release.py build/official-3.0.ipa
+          rm build/official-3.0.ipa
+      - name: Build on-device pairing
+        run: bash scripts/build_rppairing_ios.sh
+      - name: Build and package modified Husk
+        run: bash scripts/package_ipa.sh "$PWD/build/Husk-heap-test.ipa"
+      - name: Verify candidate identity
+        run: |
+          python3 scripts/ci_verify_heap.py build/Husk-heap-test.ipa
+          shasum -a 256 build/Husk-heap-test.ipa > build/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Husk-heap-test-${{ github.run_number }}
+          path: |
+            build/Husk-heap-test.ipa
+            build/SHA256SUMS
+            build/runtime-manifest.json
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: heap-build-logs-${{ github.run_number }}
+          path: |
+            /tmp/husk_ipa/build.log
+            build/logs
+          retention-days: 3
+          if-no-files-found: ignore
