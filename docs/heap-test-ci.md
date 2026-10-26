@@ -9,3 +9,9 @@ The IPA is ad-hoc signed for re-signing by SideStore. No Apple credentials are u
 Local macOS mapping tests passed; that is not proof that a constrained iPhone process can allocate the region. vphone tests must record the actual JIT route and whether the new fallback executed. A vphone success is not a physical iPhone 13 acceptance result.
 
 CI also emits separately labelled vphone and vphone-baseline builds. Only those builds allow a guarded MAP_JIT execution probe on iOS 27; device builds keep the upstream JIT policy. The baseline excludes the heap fix. In either VM build, the app-specific preference husk.qa.forceCompressedFallback enables TL_MM_MAX_GIB=5 to reproduce the original large reservation failure without changing the virtual machine configuration. This fault injection is not a measured phone limit.
+
+## Validation status (2026-10-26)
+
+GitHub Actions run 40272635684 built and verified all three variants successfully. The research VM accepted installation and the test app's guarded MAP_JIT probe returned failure: the kernel granted an executable mapping, but the generated-code probe faulted. The upstream JIT policy blocks the standard build before APK execution, and the VM-only probe does not resolve that underlying execution restriction. See the open upstream vphone issue https://github.com/Lakr233/vphone-cli/issues/603 for related research-guest JIT limitations (different tested system version).
+
+No end-to-end Flutter success is claimed. The forced reservation comparison cannot reach the heap initialization until JIT works. The device IPA is an experimental heap candidate, not a verified fix. Do not use a vphone artifact as the physical-device candidate.
