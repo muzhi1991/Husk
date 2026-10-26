@@ -59,6 +59,13 @@ struct HuskApp: App {
     @UIApplicationDelegateAdaptor(HuskAppDelegate.self) private var appDelegate
 
     init() {
+        #if HUSK_VPHONE_TEST
+        // Opt-in fault injection, scoped to this process and this test build.
+        if UserDefaults.standard.bool(forKey: "husk.qa.forceCompressedFallback") {
+            setenv("TL_MM_MAX_GIB", "5", 1)
+            setenv("TL_MM_TRACE", "1", 1)
+        }
+        #endif
         // Order matters. HuskLog redirects stderr, so anything that logs before
         // this point is lost -- and the JIT path is exactly what we cannot afford
         // to lose the first line of.

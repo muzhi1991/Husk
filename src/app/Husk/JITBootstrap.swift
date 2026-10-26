@@ -71,6 +71,9 @@ enum JITBootstrap {
     @discardableResult
     static func prewarm() -> Bool {
         if prewarmed { return true }
+        #if HUSK_VPHONE_TEST
+        if mapJITResult == true { return true }
+        #endif
         // Before iOS 26 Husk can make the region itself where the device allows it (TrollStore's dynamic-codesigning, a
         // jailbreak, or a debugger that attached and let go), so it does not wait for CS_DEBUGGED there: Dopamine hides that
         // flag from apps unless "Allow JIT in Apps" is on, while still letting them run code they wrote.
@@ -144,6 +147,9 @@ enum JITBootstrap {
     /// the region itself, which is all TrollStore and jailbroken devices need. Cheap after the first call, and logs nothing.
     static var ready: Bool {
         if debuggedFlag || prewarmed || isLive { return true }
+        #if HUSK_VPHONE_TEST
+        if mapJITResult == true { return true }
+        #endif
         guard canGrantOwnJIT, !selfGrantTried else { return false }
         return prewarm()
     }
@@ -164,7 +170,13 @@ enum JITBootstrap {
     /// Whether this device enforces TXM, so that only a trap servicer can grant
     /// executable memory. Uses the same rule as the "TXM expected" line in the
     /// log banner, so the two can never disagree.
+    #if HUSK_VPHONE_TEST
+    // Only this separately labelled research-VM build probes executable memory.
+    // The probe must actually execute its generated instruction before reporting success.
+    static let deviceEnforcesTXM = false
+    #else
     static let deviceEnforcesTXM: Bool = HuskLog.expectsTXM(model: HuskLog.deviceModel)
+    #endif
 
     /// Why the last prewarm failed, for the UI to show.
     ///
@@ -284,8 +296,12 @@ enum JITBootstrap {
     /// debugger to hand it out: true before iOS 26, which is when the Trusted Execution Monitor arrived. It is what makes
     /// TrollStore and jailbreaks enough, without StikDebug.
     static var canGrantOwnJIT: Bool {
+        #if HUSK_VPHONE_TEST
+        return true
+        #else
         if #available(iOS 26, *) { return false }
         return true
+        #endif
     }
 
     /// husk-jit.js as standard base64, which Built-in StikJIT's custom script takes.

@@ -1066,8 +1066,13 @@ static int g_nphantom;
 
 static void *phantom_reserve(size_t len)
 {
+#ifdef HUSK_HEAP_BASELINE
+    if (len != 2 * PHANTOM_HALF || g_nphantom >= 4) return MAP_FAILED;
+#else
     if ((len != 2 * PHANTOM_HALF && len != 2 * PHANTOM_HALF - (size_t)getpagesize()) || g_nphantom >= 4) return MAP_FAILED;
+    #endif
     void *res = MAP_FAILED;
+#ifndef HUSK_HEAP_BASELINE
     /* Ask the kernel for alignment without an oversized temporary reservation.
      * ANYWHERE does not replace an existing mapping. Keep the old fallback if
      * the task's address-space policy refuses this request too. */
@@ -1078,6 +1083,7 @@ static void *phantom_reserve(size_t len)
                              VM_PROT_ALL, VM_INHERIT_COPY);
     tl_log_line("mm: aligned cage vm_map kr=%d address=%p", kr, (void *)aligned);
     if (kr == KERN_SUCCESS) res = (void *)aligned;
+#endif
     /* Reserve 5 GiB, which holds an aligned 4 GiB only when it starts in the first GiB of an alignment period. Mappings come one after
      * another, so a miss is kept (it moves the next one on by a GiB) and given back once there is a hit. */
     void *held[8]; int nheld = 0;

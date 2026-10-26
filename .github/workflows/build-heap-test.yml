@@ -10,6 +10,12 @@ concurrency:
   cancel-in-progress: false
 jobs:
   ios:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [device, vphone, vphone-baseline]
+    env:
+      HUSK_VARIANT: ${{ matrix.variant }}
     runs-on: macos-26
     timeout-minutes: 90
     steps:
@@ -38,7 +44,7 @@ jobs:
           shasum -a 256 build/Husk-heap-test.ipa > build/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: Husk-heap-test-${{ github.run_number }}
+          name: Husk-heap-test-${{ matrix.variant }}-${{ github.run_number }}
           path: |
             build/Husk-heap-test.ipa
             build/SHA256SUMS
@@ -48,7 +54,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: heap-build-logs-${{ github.run_number }}
+          name: heap-build-logs-${{ matrix.variant }}-${{ github.run_number }}
           path: |
             /tmp/husk_ipa/build.log
             build/logs

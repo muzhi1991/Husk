@@ -7,7 +7,8 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     assert info["HuskExperimentalFix"] == "dart-aligned-cage-vm-map-v1"
     commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
     assert info["HuskBuildCommit"].startswith(commit)
-    assert b"aligned cage vm_map kr=" in z.read(prefix + "Husk"), "Missing compiled patch"
+    has_patch = b"aligned cage vm_map kr=" in z.read(prefix + "Husk")
+    assert has_patch == (info.get("HuskTestVariant") != "vphone-baseline"), "Wrong compiled variant"
     manifest = json.loads(Path("build/runtime-manifest.json").read_text())
     for name, sha in manifest["files"].items():
         if name.startswith("Frameworks/"): continue  # codesign changes Mach-O bytes

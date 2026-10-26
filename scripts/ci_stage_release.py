@@ -29,6 +29,12 @@ shutil.copy2(DEST / "Frameworks/libqemu-aarch64-softmmu.dylib", lib)
 project_path = ROOT / "src/app/project.yml"
 project = yaml.safe_load(project_path.read_text())
 app = project["targets"]["Husk"]
+variant = os.environ.get("HUSK_VARIANT", "device")
+assert variant in ("device", "vphone", "vphone-baseline")
+if variant != "device":
+    app["settings"]["base"]["SWIFT_ACTIVE_COMPILATION_CONDITIONS"] = "$(inherited) HUSK_VPHONE_TEST"
+if variant == "vphone-baseline":
+    app["settings"]["base"]["GCC_PREPROCESSOR_DEFINITIONS"] = ["$(inherited)", "HUSK_HEAP_BASELINE=1"]
 for dep in app["dependencies"]:
     old = dep.get("framework", "")
     if old.endswith("libANGLE-shared.dylib"):
@@ -42,9 +48,10 @@ app["preBuildScripts"] = [{"name": "Stage verified 3.0 runtime resources", "base
 project_path.write_text(yaml.safe_dump(project, sort_keys=False))
 plist_path = ROOT / "src/app/Husk/Info.plist"
 info = plistlib.loads(plist_path.read_bytes())
-info["CFBundleDisplayName"] = "Husk Heap Test"
+info["CFBundleDisplayName"] = "Husk Heap Test" if variant == "device" else "Husk VM " + variant.removeprefix("vphone").strip("-")
 info["CFBundleVersion"] = str(130 + int(os.environ.get("GITHUB_RUN_NUMBER", "0")))
 info["HuskExperimentalFix"] = "dart-aligned-cage-vm-map-v1"
+info["HuskTestVariant"] = variant
 plist_path.write_bytes(plistlib.dumps(info))
 (ROOT / "build/runtime-manifest.json").write_text(json.dumps({"source": "Leviidev/Husk release 3.0", "ipa_sha256": EXPECTED, "files": manifest}, indent=2))
 print("Staged", len(manifest), "verified runtime files; app and translation layer will be compiled from this fork.")
